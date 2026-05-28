@@ -1,0 +1,8 @@
+{
+  "name": "4",
+  "description": "Real-time Institutional SMC Trading Assistant for XAUUSD with WebSocket, Gemini validation, and Telegram signals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
