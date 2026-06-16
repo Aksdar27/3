@@ -5,7 +5,11 @@ import { addLog } from '../state.js';
 import { updateRiskStats } from './risk.js';
 
 export function checkOpenTrades(price: number) {
+    // The live position is exclusively managed by tradeManager.processActiveTrade.
+    // Skip its signal here to avoid duplicate closes, conflicting statuses and double risk counting.
+    const managedTradeId = globalState.smcState?.activeTrade?.id;
     for (const sig of globalState.signals) {
+        if (managedTradeId && sig.id === managedTradeId) continue;
         if (sig.status === 'LIMIT_PLACED' || sig.status === 'PENDING') {
             if (sig.direction === 'BUY' && price <= sig.entry) { 
                 sig.status = 'ACTIVE'; 
@@ -60,7 +64,7 @@ export function checkOpenTrades(price: number) {
     }
 }
 
-function updateBacktestStats(result: 'WIN' | 'LOSS' | 'BREAKEVEN', hitRR: number = 0) {
+export function updateBacktestStats(result: 'WIN' | 'LOSS' | 'BREAKEVEN', hitRR: number = 0) {
     if (!globalState.backtestStats) {
         globalState.backtestStats = {
             totalTrades: 0, wins: 0, losses: 0, breakevens: 0, winRate: 0, avgRR: 0, maxDrawdown: 0

@@ -28,6 +28,7 @@ let lastGeminiCallTime = 0;
 let geminiCooldownMs = 30000;
 let pools: LiquidityPool[] = [];
 let calendarFetchTime = 0;
+let cooldownFallbackTimer: NodeJS.Timeout | null = null;
 
 export function processSMCLogic(price: number, timestamp: number = Date.now()) {
     registerTick(timestamp);
@@ -265,10 +266,15 @@ export function processSMCLogic(price: number, timestamp: number = Date.now()) {
 }
 else if (state.step === 'INVALIDATED' || state.step === 'COOLDOWN') {
    if (m15Candles.length > 0 && m15Candles[m15Candles.length - 1].timestamp + (15 * 60 * 1000) < timestamp) {
+       if (cooldownFallbackTimer) {
+           clearTimeout(cooldownFallbackTimer);
+           cooldownFallbackTimer = null;
+       }
        transitionState(state, 'WAITING', 'State cooldown expired');
-   } else {
-       setTimeout(() => { 
-           if(state.step === 'COOLDOWN' || state.step === 'INVALIDATED') {
+   } else if (!cooldownFallbackTimer) {
+       cooldownFallbackTimer = setTimeout(() => {
+           cooldownFallbackTimer = null;
+           if (state.step === 'COOLDOWN' || state.step === 'INVALIDATED') {
                transitionState(state, 'WAITING', 'Fallback timer cooldown expired');
            }
        }, 60000);

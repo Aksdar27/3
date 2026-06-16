@@ -3,6 +3,9 @@ import { globalState, addLog } from '../state.js';
 import { simulateRealisticFill } from './execution.js';
 import { getCurrentRegime } from './regime.js';
 import { FSMState, transitionState } from './fsm.js';
+import { updateRiskStats } from './risk.js';
+import { updateBacktestStats } from './analytics.js';
+import { updateFirebaseSignal } from '../db.js';
 
 export function processActiveTrade(price: number, smcState: SmcState, atr: number) {
     if (!smcState.activeTrade) return;
@@ -89,8 +92,7 @@ export function processActiveTrade(price: number, smcState: SmcState, atr: numbe
 
 function closeTrade(type: 'TP_HIT' | 'SL_HIT', trade: TradeState, filledPrice: number, smcState: SmcState, slip: number) {
     const signalIndex = globalState.signals.findIndex(s => s.id === trade.id);
-    let isBreakevenStatus = false;
-    
+
     let resultType: 'WIN' | 'LOSS' | 'BREAKEVEN' = 'LOSS';
     if (type === 'TP_HIT') {
         resultType = 'WIN';
@@ -106,28 +108,19 @@ function closeTrade(type: 'TP_HIT' | 'SL_HIT', trade: TradeState, filledPrice: n
          }
     }
     
-    if (resultType === 'BREAKEVEN') isBreakevenStatus = true;
-    
+    let signalRR = 0;
     if (signalIndex >= 0) {
-        globalState.signals[signalIndex].status = isBreakevenStatus ? 'BREAKEVEN_HIT' : type;
-        globalState.signals[signalIndex].result = resultType;
+        const sig = globalState.signals[signalIndex];
+        sig.status = 'CLOSED';
+        sig.result = resultType;
+        signalRR = sig.rr || 0;
+        if (sig.firebaseId) updateFirebaseSignal(sig.firebaseId, { status: 'CLOSED', closedAt: Date.now(), result: resultType });
     }
     
-    addLog(`Trade ${trade.id} closed due to ${isBreakevenStatus ? 'BREAKEVEN' : type} at ${filledPrice.toFixed(3)}. Result: ${resultType} (Slip: ${slip.toFixed(2)})`, resultType === 'WIN' ? 'info' : 'warn');
+    addLog(`Trade ${trade.id} closed due to ${resultType === 'BREAKEVEN' ? 'BREAKEVEN' : type} at ${filledPrice.toFixed(3)}. Result: ${resultType} (Slip: ${slip.toFixed(2)})`, resultType === 'WIN' ? 'info' : 'warn');
     
-    if (globalState.riskStats) {
-        if (resultType === 'LOSS') {
-            globalState.riskStats.consecutiveLosses++;
-            globalState.riskStats.dailyLoss += 1;
-        } else if (resultType === 'WIN') {
-            globalState.riskStats.consecutiveLosses = 0; 
-        }
-        
-        if (globalState.riskStats.consecutiveLosses >= 3 || globalState.riskStats.dailyLoss >= 4) {
-             globalState.riskStats.drawdownLock = true;
-             addLog(`Drawdown Lock Activated. Max daily losses reached.`, 'error');
-        }
-    }
+    updateRiskStats(resultType);
+    updateBacktestStats(resultType, resultType === 'WIN' ? signalRR : 0);
     
     smcState.activeTrade = null;
     transitionState(smcState, 'COOLDOWN', 'Trade closed');
